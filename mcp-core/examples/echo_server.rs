@@ -5,7 +5,7 @@ use mcp_core::{
     tool_text_response,
     tools::ToolHandlerFn,
     transport::{ServerSseTransport, ServerStdioTransport},
-    types::{CallToolRequest, ServerCapabilities, Tool, ToolResponseContent, CallToolResponse},
+    types::{CallToolRequest, CallToolResponse, ServerCapabilities, Tool, ToolResponseContent},
 };
 use serde_json::json;
 
@@ -13,7 +13,7 @@ use serde_json::json;
 #[command(author, version, about, long_about = None)]
 struct Cli {
     /// Transport type to use
-    #[arg(value_enum, default_value_t = TransportType::Sse)]
+    #[arg(value_enum, default_value_t = TransportType::Stdio)]
     transport: TransportType,
 }
 
@@ -64,6 +64,7 @@ impl EchoTool {
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::DEBUG)
+        .with_writer(std::io::stderr)
         .init();
 
     let cli = Cli::parse();

@@ -10,11 +10,12 @@ use mcp_core::{
 };
 use serde_json::json;
 use tracing::info;
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
     /// Transport type to use
-    #[arg(value_enum, default_value_t = TransportType::Sse)]
+    #[arg(value_enum, default_value_t = TransportType::Stdio)]
     transport: TransportType,
 }
 
@@ -36,9 +37,10 @@ async fn main() -> Result<()> {
     let response = match cli.transport {
         TransportType::Stdio => {
             // Build the server first
-            // cargo build --bin echo_server
-            let transport = ClientStdioTransport::new("./target/debug/echo_server", &[])?;
-            let client = ClientBuilder::new(transport.clone()).build();
+            // cargo run --example echo_server --features="sse"
+            let transport = ClientStdioTransport::new("./target/debug/examples/echo_server", &[])?;
+            let client: mcp_core::client::Client<ClientStdioTransport> =
+                ClientBuilder::new(transport.clone()).build();
             tokio::time::sleep(Duration::from_millis(100)).await;
             client.open().await?;
 
