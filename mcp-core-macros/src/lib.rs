@@ -11,6 +11,27 @@ struct MacroArgs {
     name: Option<String>,
     description: Option<String>,
     param_descriptions: HashMap<String, String>,
+    annotations: ToolAnnotations,
+}
+
+struct ToolAnnotations {
+    title: Option<String>,
+    read_only_hint: Option<bool>,
+    destructive_hint: Option<bool>,
+    idempotent_hint: Option<bool>,
+    open_world_hint: Option<bool>,
+}
+
+impl Default for ToolAnnotations {
+    fn default() -> Self {
+        Self {
+            title: None,
+            read_only_hint: None,
+            destructive_hint: None,
+            idempotent_hint: None,
+            open_world_hint: None,
+        }
+    }
 }
 
 impl Parse for MacroArgs {
@@ -18,6 +39,7 @@ impl Parse for MacroArgs {
         let mut name = None;
         let mut description = None;
         let mut param_descriptions = HashMap::new();
+        let mut annotations = ToolAnnotations::default();
 
         let meta_list: Punctuated<Meta, Token![,]> = Punctuated::parse_terminated(input)?;
 
@@ -33,6 +55,27 @@ impl Parse for MacroArgs {
                         match ident.as_str() {
                             "name" => name = Some(lit_str.value()),
                             "description" => description = Some(lit_str.value()),
+                            "title" => annotations.title = Some(lit_str.value()),
+                            _ => {}
+                        }
+                    } else if let Expr::Lit(ExprLit {
+                        lit: Lit::Bool(lit_bool),
+                        ..
+                    }) = nv.value
+                    {
+                        match ident.as_str() {
+                            "read_only_hint" | "readOnlyHint" => {
+                                annotations.read_only_hint = Some(lit_bool.value)
+                            }
+                            "destructive_hint" | "destructiveHint" => {
+                                annotations.destructive_hint = Some(lit_bool.value)
+                            }
+                            "idempotent_hint" | "idempotentHint" => {
+                                annotations.idempotent_hint = Some(lit_bool.value)
+                            }
+                            "open_world_hint" | "openWorldHint" => {
+                                annotations.open_world_hint = Some(lit_bool.value)
+                            }
                             _ => {}
                         }
                     }
@@ -54,6 +97,46 @@ impl Parse for MacroArgs {
                         }
                     }
                 }
+                Meta::List(list) if list.path.is_ident("annotations") => {
+                    let nested: Punctuated<Meta, Token![,]> =
+                        list.parse_args_with(Punctuated::parse_terminated)?;
+
+                    for meta in nested {
+                        if let Meta::NameValue(nv) = meta {
+                            let key = nv.path.get_ident().unwrap().to_string();
+
+                            if let Expr::Lit(ExprLit {
+                                lit: Lit::Str(lit_str),
+                                ..
+                            }) = nv.value
+                            {
+                                if key == "title" {
+                                    annotations.title = Some(lit_str.value());
+                                }
+                            } else if let Expr::Lit(ExprLit {
+                                lit: Lit::Bool(lit_bool),
+                                ..
+                            }) = nv.value
+                            {
+                                match key.as_str() {
+                                    "read_only_hint" | "readOnlyHint" => {
+                                        annotations.read_only_hint = Some(lit_bool.value)
+                                    }
+                                    "destructive_hint" | "destructiveHint" => {
+                                        annotations.destructive_hint = Some(lit_bool.value)
+                                    }
+                                    "idempotent_hint" | "idempotentHint" => {
+                                        annotations.idempotent_hint = Some(lit_bool.value)
+                                    }
+                                    "open_world_hint" | "openWorldHint" => {
+                                        annotations.open_world_hint = Some(lit_bool.value)
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -62,6 +145,7 @@ impl Parse for MacroArgs {
             name,
             description,
             param_descriptions,
+            annotations,
         })
     }
 }
@@ -76,6 +160,13 @@ pub fn tool(args: TokenStream, input: TokenStream) -> TokenStream {
     let struct_name = format_ident!("{}", { fn_name_str.to_case(Case::Pascal) });
     let tool_name = args.name.unwrap_or(fn_name_str);
     let tool_description = args.description.unwrap_or_default();
+
+    // Tool annotations
+    let title = args.annotations.title.unwrap_or_else(|| tool_name.clone());
+    let read_only_hint = args.annotations.read_only_hint.unwrap_or(false);
+    let destructive_hint = args.annotations.destructive_hint.unwrap_or(true);
+    let idempotent_hint = args.annotations.idempotent_hint.unwrap_or(false);
+    let open_world_hint = args.annotations.open_world_hint.unwrap_or(true);
 
     let mut param_defs = Vec::new();
     let mut param_names = Vec::new();
@@ -134,15 +225,59 @@ pub fn tool(args: TokenStream, input: TokenStream) -> TokenStream {
                 let schema = schemars::schema_for!(#params_struct_name);
                 let mut schema = serde_json::to_value(schema.schema).unwrap_or_default();
                 if let serde_json::Value::Object(ref mut map) = schema {
+                    // Add required fields
                     map.insert("required".to_string(), serde_json::Value::Array(
                         vec![#(serde_json::Value::String(#required_params.to_string())),*]
                     ));
+                    map.remove("title");
+
+                    // Normalize property types
+                    if let Some(serde_json::Value::Object(props)) = map.get_mut("properties") {
+                        for (_name, prop) in props.iter_mut() {
+                            if let serde_json::Value::Object(prop_obj) = prop {
+                                // Fix number types
+                                if let Some(type_val) = prop_obj.get("type") {
+                                    if type_val == "integer" || prop_obj.contains_key("format") {
+                                        // If it's any kind of number, normalize to number
+                                        prop_obj.insert("type".to_string(), serde_json::Value::String("number".to_string()));
+                                        // Remove unnecessary format fields
+                                        prop_obj.remove("format");
+                                        prop_obj.remove("minimum");
+                                    }
+                                }
+
+                                // Fix optional types (array with null)
+                                if let Some(serde_json::Value::Array(types)) = prop_obj.get("type") {
+                                    if types.len() == 2 && types.contains(&serde_json::Value::String("null".to_string())) {
+                                        // Get the non-null type
+                                        let main_type = types.iter()
+                                            .find(|&t| t != &serde_json::Value::String("null".to_string()))
+                                            .cloned()
+                                            .unwrap_or(serde_json::Value::String("string".to_string()));
+
+                                        // Replace with single type
+                                        prop_obj.insert("type".to_string(), main_type);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
+
+                // Create annotations object
+                let annotations = serde_json::json!({
+                    "title": #title,
+                    "readOnlyHint": #read_only_hint,
+                    "destructiveHint": #destructive_hint,
+                    "idempotentHint": #idempotent_hint,
+                    "openWorldHint": #open_world_hint
+                });
 
                 mcp_core::types::Tool {
                     name: #tool_name.to_string(),
                     description: Some(#tool_description.to_string()),
                     input_schema: schema,
+                    annotations: Some(annotations),
                 }
             }
 
