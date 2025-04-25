@@ -112,13 +112,13 @@ pub struct CallToolResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ToolResponseContent {
-    #[serde(rename = "text")]
+    #[serde(rename = "text", rename_all = "camelCase")]
     Text { text: String },
-    #[serde(rename = "image")]
+    #[serde(rename = "image", rename_all = "camelCase")]
     Image { data: String, mime_type: String },
-    #[serde(rename = "audio")]
+    #[serde(rename = "audio", rename_all = "camelCase")]
     Audio { data: String, mime_type: String },
-    #[serde(rename = "resource")]
+    #[serde(rename = "resource", rename_all = "camelCase")]
     Resource { resource: ResourceContents },
 }
 
