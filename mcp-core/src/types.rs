@@ -110,12 +110,14 @@ pub struct CallToolResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
+#[serde(tag = "type", rename_all = "camelCase")]
 pub enum ToolResponseContent {
     #[serde(rename = "text")]
     Text { text: String },
     #[serde(rename = "image")]
     Image { data: String, mime_type: String },
+    #[serde(rename = "audio")]
+    Audio { data: String, mime_type: String },
     #[serde(rename = "resource")]
     Resource { resource: ResourceContents },
 }

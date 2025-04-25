@@ -48,6 +48,16 @@ macro_rules! tool_image_content {
 }
 
 #[macro_export]
+macro_rules! tool_audio_content {
+    ($data:expr, $mime_type:expr) => {{
+        ToolResponseContent::Audio {
+            data: $data,
+            mime_type: $mime_type,
+        }
+    }};
+}
+
+#[macro_export]
 macro_rules! tool_resource_content {
     ($uri:expr, $mime_type:expr) => {{
         ToolResponseContent::Resource {
