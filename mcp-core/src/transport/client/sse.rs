@@ -202,6 +202,7 @@ impl Transport for ClientSseTransport {
         let session_endpoint = self.session_endpoint.clone();
         let bearer_token = self.bearer_token.clone();
         let method = method.to_owned();
+        let headers = self.headers.clone();
 
         Box::pin(async move {
             let (id, rx) = protocol.create_request().await;
@@ -242,6 +243,10 @@ impl Transport for ClientSseTransport {
             );
 
             let mut req_builder = client.post(&full_url).json(&request);
+
+            for (key, value) in headers {
+                req_builder = req_builder.header(key, value);
+            }
 
             if let Some(token) = bearer_token {
                 req_builder = req_builder.header("Authorization", format!("Bearer {}", token));
@@ -340,6 +345,10 @@ impl Transport for ClientSseTransport {
 
         let mut req_builder = self.client.post(&full_url).json(&response);
 
+        for (key, value) in &self.headers {
+            req_builder = req_builder.header(key, value);
+        }
+
         if let Some(token) = &self.bearer_token {
             req_builder = req_builder.header("Authorization", format!("Bearer {}", token));
         }
@@ -399,6 +408,10 @@ impl Transport for ClientSseTransport {
         );
 
         let mut req_builder = self.client.post(&full_url).json(&notification);
+
+        for (key, value) in &self.headers {
+            req_builder = req_builder.header(key, value);
+        }
 
         if let Some(token) = &self.bearer_token {
             req_builder = req_builder.header("Authorization", format!("Bearer {}", token));
