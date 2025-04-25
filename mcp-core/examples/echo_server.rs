@@ -40,6 +40,7 @@ impl EchoTool {
                 },
                 "required": ["message"]
             }),
+            annotations: None,
         }
     }
 
