@@ -1,6 +1,6 @@
 [package]
 name = "mcp-core-macros"
-version = "0.1.21"
+version = "0.1.22"
 edition = "2021"
 description = "A Rust Macros library for mcp-core"
 repository = "https://github.com/stevohuncho/mcp-core"
@@ -18,7 +18,7 @@ quote = "1.0"
 proc-macro2 = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-mcp-core = { version = "0.1.44" }
+mcp-core = { version = "0.1.46" }
 async-trait = "0.1"
 schemars = "0.8"
 convert_case = "0.6.0"
