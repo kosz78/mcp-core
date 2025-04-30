@@ -1,6 +1,6 @@
 use anyhow::Result;
 use mcp_core::{tool_text_content, types::ToolResponseContent};
-use mcp_core_macros::tool;
+use mcp_core_macros::{tool, tool_param};
 use serde_json::json;
 
 #[tokio::test]
@@ -8,8 +8,7 @@ async fn test_readonly_tool_annotations() {
     #[tool(
         name = "web_search",
         description = "Search the web for information",
-        read_only_hint = true,
-        open_world_hint = true
+        annotations(title = "web_search", read_only_hint = true, open_world_hint = true)
     )]
     async fn web_search_tool(query: String) -> Result<ToolResponseContent> {
         Ok(tool_text_content!(query.to_string()))
@@ -48,11 +47,13 @@ async fn test_destructive_tool_annotations() {
     #[tool(
         name = "delete_file",
         description = "Delete a file from the filesystem",
-        read_only_hint = false,
-        destructive_hint = true,
-        idempotent_hint = true,
-        open_world_hint = false,
-        title = "Delete File"
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true,
+            open_world_hint = false,
+            title = "Delete File"
+        )
     )]
     async fn delete_file_tool(path: String) -> Result<ToolResponseContent> {
         Ok(tool_text_content!(path.to_string()))
@@ -175,9 +176,9 @@ async fn test_optional_parameters() {
         description = "Tool with optional parameters"
     )]
     async fn optional_params_tool(
-        required_param: String,
-        optional_string: Option<String>,
-        optional_number: Option<i32>,
+        required_param: tool_param!(String, description = "A required parameter"),
+        optional_string: tool_param!(Option<String>, description = "An optional string parameter"),
+        optional_number: tool_param!(Option<i32>, description = "An optional number parameter"),
     ) -> Result<ToolResponseContent> {
         Ok(tool_text_content!(
             "Tool with optional params executed".to_string()
@@ -190,13 +191,16 @@ async fn test_optional_parameters() {
         "type": "object",
         "properties": {
             "required_param": {
-                "type": "string"
+                "type": "string",
+                "description": "A required parameter"
             },
             "optional_string": {
-                "type": "string"
+                "type": "string",
+                "description": "An optional string parameter"
             },
             "optional_number": {
-                "type": "number"
+                "type": "number",
+                "description": "An optional number parameter"
             }
         },
         "required": ["required_param"]
@@ -208,45 +212,23 @@ async fn test_optional_parameters() {
 #[tokio::test]
 async fn test_parameter_descriptions() {
     #[tool(
-        name = "query_database",
-        description = "Query a database with parameters",
-        params(
-            db_name = "Name of the database to query",
-            query = "SQL query to execute",
-            timeout_ms = "Query timeout in milliseconds"
-        )
+        name = "QueryDatabase",
+        description = "Query a database with parameters"
     )]
     async fn query_database_tool(
-        db_name: String,
-        query: String,
-        timeout_ms: Option<i32>,
+        db_name: tool_param!(String, description = "Name of the database to query"),
+        query: tool_param!(String, description = "SQL query to execute"),
+        timeout_ms: tool_param!(Option<i32>, description = "Query timeout in milliseconds"),
     ) -> Result<ToolResponseContent> {
         Ok(tool_text_content!("Query executed".to_string()))
     }
 
     let tool = QueryDatabaseTool::tool();
 
-    assert_eq!(tool.name, "query_database");
+    assert_eq!(tool.name, "QueryDatabase");
     assert_eq!(
         tool.description,
         Some("Query a database with parameters".to_string())
-    );
-
-    // Check parameter descriptions are included in schema
-    let schema = tool.input_schema.as_object().unwrap();
-    let properties = schema["properties"].as_object().unwrap();
-
-    assert_eq!(
-        properties["db_name"]["description"].as_str().unwrap(),
-        "Name of the database to query"
-    );
-    assert_eq!(
-        properties["query"]["description"].as_str().unwrap(),
-        "SQL query to execute"
-    );
-    assert_eq!(
-        properties["timeout_ms"]["description"].as_str().unwrap(),
-        "Query timeout in milliseconds"
     );
 
     // Validate schema structure

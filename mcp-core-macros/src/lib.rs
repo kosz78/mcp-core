@@ -1,19 +1,20 @@
 use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use std::collections::HashMap;
 use syn::{
-    parse::Parse, parse::ParseStream, parse_macro_input, punctuated::Punctuated, Expr, ExprLit,
-    FnArg, ItemFn, Lit, Meta, Pat, PatType, Token, Type,
+    parse::{Parse, ParseStream},
+    punctuated::Punctuated,
+    Expr, ExprLit, FnArg, ItemFn, Lit, Meta, Pat, PatType, Token, Type,
 };
 
-struct MacroArgs {
+#[derive(Debug)]
+struct ToolArgs {
     name: Option<String>,
     description: Option<String>,
-    param_descriptions: HashMap<String, String>,
     annotations: ToolAnnotations,
 }
 
+#[derive(Debug)]
 struct ToolAnnotations {
     title: Option<String>,
     read_only_hint: Option<bool>,
@@ -34,11 +35,10 @@ impl Default for ToolAnnotations {
     }
 }
 
-impl Parse for MacroArgs {
+impl Parse for ToolArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut name = None;
         let mut description = None;
-        let mut param_descriptions = HashMap::new();
         let mut annotations = ToolAnnotations::default();
 
         let meta_list: Punctuated<Meta, Token![,]> = Punctuated::parse_terminated(input)?;
@@ -55,46 +55,15 @@ impl Parse for MacroArgs {
                         match ident.as_str() {
                             "name" => name = Some(lit_str.value()),
                             "description" => description = Some(lit_str.value()),
-                            "title" => annotations.title = Some(lit_str.value()),
-                            _ => {}
-                        }
-                    } else if let Expr::Lit(ExprLit {
-                        lit: Lit::Bool(lit_bool),
-                        ..
-                    }) = nv.value
-                    {
-                        match ident.as_str() {
-                            "read_only_hint" | "readOnlyHint" => {
-                                annotations.read_only_hint = Some(lit_bool.value)
-                            }
-                            "destructive_hint" | "destructiveHint" => {
-                                annotations.destructive_hint = Some(lit_bool.value)
-                            }
-                            "idempotent_hint" | "idempotentHint" => {
-                                annotations.idempotent_hint = Some(lit_bool.value)
-                            }
-                            "open_world_hint" | "openWorldHint" => {
-                                annotations.open_world_hint = Some(lit_bool.value)
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                Meta::List(list) if list.path.is_ident("params") => {
-                    let nested: Punctuated<Meta, Token![,]> =
-                        list.parse_args_with(Punctuated::parse_terminated)?;
-
-                    for meta in nested {
-                        if let Meta::NameValue(nv) = meta {
-                            if let Expr::Lit(ExprLit {
-                                lit: Lit::Str(lit_str),
-                                ..
-                            }) = nv.value
-                            {
-                                let param_name = nv.path.get_ident().unwrap().to_string();
-                                param_descriptions.insert(param_name, lit_str.value());
+                            _ => {
+                                return Err(syn::Error::new_spanned(
+                                    nv.path,
+                                    format!("Unknown attribute: {}", ident),
+                                ))
                             }
                         }
+                    } else {
+                        return Err(syn::Error::new_spanned(nv.value, "Expected string literal"));
                     }
                 }
                 Meta::List(list) if list.path.is_ident("annotations") => {
@@ -112,6 +81,11 @@ impl Parse for MacroArgs {
                             {
                                 if key == "title" {
                                     annotations.title = Some(lit_str.value());
+                                } else {
+                                    return Err(syn::Error::new_spanned(
+                                        nv.path,
+                                        format!("Unknown string annotation: {}", key),
+                                    ));
                                 }
                             } else if let Expr::Lit(ExprLit {
                                 lit: Lit::Bool(lit_bool),
@@ -131,20 +105,39 @@ impl Parse for MacroArgs {
                                     "open_world_hint" | "openWorldHint" => {
                                         annotations.open_world_hint = Some(lit_bool.value)
                                     }
-                                    _ => {}
+                                    _ => {
+                                        return Err(syn::Error::new_spanned(
+                                            nv.path,
+                                            format!("Unknown boolean annotation: {}", key),
+                                        ))
+                                    }
                                 }
+                            } else {
+                                return Err(syn::Error::new_spanned(
+                                    nv.value,
+                                    "Expected string or boolean literal for annotation value",
+                                ));
                             }
+                        } else {
+                            return Err(syn::Error::new_spanned(
+                                meta,
+                                "Expected name-value pair for annotation",
+                            ));
                         }
                     }
                 }
-                _ => {}
+                _ => {
+                    return Err(syn::Error::new_spanned(
+                        meta,
+                        "Expected name-value pair or list",
+                    ))
+                }
             }
         }
 
-        Ok(MacroArgs {
+        Ok(ToolArgs {
             name,
             description,
-            param_descriptions,
             annotations,
         })
     }
@@ -152,17 +145,24 @@ impl Parse for MacroArgs {
 
 #[proc_macro_attribute]
 pub fn tool(args: TokenStream, input: TokenStream) -> TokenStream {
-    let args = parse_macro_input!(args as MacroArgs);
-    let input_fn = parse_macro_input!(input as ItemFn);
+    let args = match syn::parse::<ToolArgs>(args) {
+        Ok(args) => args,
+        Err(e) => return e.to_compile_error().into(),
+    };
+
+    let input_fn = match syn::parse::<ItemFn>(input.clone()) {
+        Ok(input_fn) => input_fn,
+        Err(e) => return e.to_compile_error().into(),
+    };
 
     let fn_name = &input_fn.sig.ident;
     let fn_name_str = fn_name.to_string();
-    let struct_name = format_ident!("{}", { fn_name_str.to_case(Case::Pascal) });
-    let tool_name = args.name.unwrap_or(fn_name_str);
+    let struct_name = format_ident!("{}", fn_name_str.to_case(Case::Pascal));
+    let tool_name = args.name.unwrap_or(fn_name_str.clone());
     let tool_description = args.description.unwrap_or_default();
 
     // Tool annotations
-    let title = args.annotations.title.unwrap_or_else(|| tool_name.clone());
+    let title = args.annotations.title.unwrap_or(fn_name_str.clone());
     let read_only_hint = args.annotations.read_only_hint.unwrap_or(false);
     let destructive_hint = args.annotations.destructive_hint.unwrap_or(true);
     let idempotent_hint = args.annotations.idempotent_hint.unwrap_or(false);
@@ -171,37 +171,77 @@ pub fn tool(args: TokenStream, input: TokenStream) -> TokenStream {
     let mut param_defs = Vec::new();
     let mut param_names = Vec::new();
     let mut required_params = Vec::new();
+    let mut hidden_params: Vec<String> = Vec::new();
+    let mut param_descriptions = Vec::new();
 
     for arg in input_fn.sig.inputs.iter() {
         if let FnArg::Typed(PatType { pat, ty, .. }) = arg {
+            let mut is_hidden = false;
+            let mut description: Option<String> = None;
+            let mut is_optional = false;
+
+            // Check for tool_type macro usage
+            if let Type::Macro(type_macro) = &**ty {
+                if let Some(ident) = type_macro.mac.path.get_ident() {
+                    if ident == "tool_param" {
+                        if let Ok(args) =
+                            syn::parse2::<ToolParamArgs>(type_macro.mac.tokens.clone())
+                        {
+                            is_hidden = args.hidden;
+                            description = args.description;
+
+                            // Check if the parameter type is Option<T>
+                            if let Type::Path(type_path) = &args.ty {
+                                is_optional = type_path
+                                    .path
+                                    .segments
+                                    .last()
+                                    .map_or(false, |segment| segment.ident == "Option");
+                            }
+                        }
+                    }
+                }
+            }
+
+            if is_hidden {
+                if let Pat::Ident(ident) = &**pat {
+                    hidden_params.push(ident.ident.to_string());
+                }
+            }
+
             if let Pat::Ident(param_ident) = &**pat {
                 let param_name = &param_ident.ident;
                 let param_name_str = param_name.to_string();
-                let description = args
-                    .param_descriptions
-                    .get(&param_name_str)
-                    .map(|s| s.as_str())
-                    .unwrap_or("");
 
-                param_names.push(param_name);
+                param_names.push(param_name.clone());
 
                 // Check if the parameter type is Option<T>
-                let is_optional = if let Type::Path(type_path) = &**ty {
-                    type_path
-                        .path
-                        .segments
-                        .last()
-                        .map_or(false, |segment| segment.ident == "Option")
-                } else {
-                    false
-                };
-
                 if !is_optional {
+                    is_optional = if let Type::Path(type_path) = &**ty {
+                        type_path
+                            .path
+                            .segments
+                            .last()
+                            .map_or(false, |segment| segment.ident == "Option")
+                    } else {
+                        false
+                    }
+                }
+
+                // Only require non-optional, non-hidden
+                if !is_optional && !is_hidden {
                     required_params.push(param_name_str.clone());
                 }
 
+                if let Some(desc) = description {
+                    param_descriptions.push(quote! {
+                        if name == #param_name_str {
+                            prop_obj.insert("description".to_string(), serde_json::Value::String(#desc.to_string()));
+                        }
+                    });
+                }
+
                 param_defs.push(quote! {
-                    #[schemars(description = #description)]
                     #param_name: #ty
                 });
             }
@@ -233,38 +273,45 @@ pub fn tool(args: TokenStream, input: TokenStream) -> TokenStream {
 
                     // Normalize property types
                     if let Some(serde_json::Value::Object(props)) = map.get_mut("properties") {
-                        for (_name, prop) in props.iter_mut() {
+                        for (name, prop) in props.iter_mut() {
                             if let serde_json::Value::Object(prop_obj) = prop {
                                 // Fix number types
                                 if let Some(type_val) = prop_obj.get("type") {
-                                    if type_val == "integer" || prop_obj.contains_key("format") {
-                                        // If it's any kind of number, normalize to number
+                                    if type_val == "integer" || type_val == "number" || prop_obj.contains_key("format") {
+                                        // Convert any numeric type to "number"
                                         prop_obj.insert("type".to_string(), serde_json::Value::String("number".to_string()));
-                                        // Remove unnecessary format fields
                                         prop_obj.remove("format");
                                         prop_obj.remove("minimum");
+                                        prop_obj.remove("maximum");
                                     }
                                 }
 
                                 // Fix optional types (array with null)
                                 if let Some(serde_json::Value::Array(types)) = prop_obj.get("type") {
                                     if types.len() == 2 && types.contains(&serde_json::Value::String("null".to_string())) {
-                                        // Get the non-null type
-                                        let main_type = types.iter()
+                                        let mut main_type = types.iter()
                                             .find(|&t| t != &serde_json::Value::String("null".to_string()))
                                             .cloned()
                                             .unwrap_or(serde_json::Value::String("string".to_string()));
 
-                                        // Replace with single type
+                                        // If the main type is "integer", convert it to "number"
+                                        if main_type == serde_json::Value::String("integer".to_string()) {
+                                            main_type = serde_json::Value::String("number".to_string());
+                                        }
+
                                         prop_obj.insert("type".to_string(), main_type);
                                     }
                                 }
+
+                                // Add descriptions if they exist
+                                #(#param_descriptions)*
                             }
                         }
+
+                        #(props.remove(#hidden_params);)*
                     }
                 }
 
-                // Create annotations object
                 let annotations = serde_json::json!({
                     "title": #title,
                     "readOnlyHint": #read_only_hint,
@@ -302,13 +349,9 @@ pub fn tool(args: TokenStream, input: TokenStream) -> TokenStream {
 
                         match #fn_name(#(params.#param_names,)*).await {
                             Ok(response) => {
-                                let content = if let Ok(vec_content) = serde_json::from_value::<Vec<mcp_core::types::ToolResponseContent>>(
-                                    serde_json::to_value(&response).unwrap_or_default()
-                                ) {
+                                let content = if let Ok(vec_content) = serde_json::from_value::<Vec<mcp_core::types::ToolResponseContent>>(serde_json::to_value(&response).unwrap_or_default()) {
                                     vec_content
-                                } else if let Ok(single_content) = serde_json::from_value::<mcp_core::types::ToolResponseContent>(
-                                    serde_json::to_value(&response).unwrap_or_default()
-                                ) {
+                                } else if let Ok(single_content) = serde_json::from_value::<mcp_core::types::ToolResponseContent>(serde_json::to_value(&response).unwrap_or_default()) {
                                     vec![single_content]
                                 } else {
                                     vec![mcp_core::types::ToolResponseContent::Text {
@@ -321,7 +364,7 @@ pub fn tool(args: TokenStream, input: TokenStream) -> TokenStream {
                                     is_error: None,
                                     meta: None,
                                 }
-                            },
+                            }
                             Err(e) => mcp_core::types::CallToolResponse {
                                 content: vec![mcp_core::types::ToolResponseContent::Text {
                                     text: format!("Tool execution error: {}", e)
@@ -337,4 +380,58 @@ pub fn tool(args: TokenStream, input: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(expanded)
+}
+
+#[derive(Debug)]
+struct ToolParamArgs {
+    ty: Type,
+    hidden: bool,
+    description: Option<String>,
+}
+
+impl Parse for ToolParamArgs {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut hidden = false;
+        let mut description = None;
+        let ty = input.parse()?;
+
+        if input.peek(Token![,]) {
+            input.parse::<Token![,]>()?;
+            let meta_list: Punctuated<Meta, Token![,]> = Punctuated::parse_terminated(input)?;
+
+            for meta in meta_list {
+                match meta {
+                    Meta::Path(path) if path.is_ident("hidden") => {
+                        hidden = true;
+                    }
+                    Meta::NameValue(nv) if nv.path.is_ident("description") => {
+                        if let Expr::Lit(ExprLit {
+                            lit: Lit::Str(lit_str),
+                            ..
+                        }) = &nv.value
+                        {
+                            description = Some(lit_str.value().to_string());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        Ok(ToolParamArgs {
+            ty,
+            hidden,
+            description,
+        })
+    }
+}
+
+#[proc_macro]
+pub fn tool_param(input: TokenStream) -> TokenStream {
+    let args = syn::parse_macro_input!(input as ToolParamArgs);
+    let ty = args.ty;
+
+    TokenStream::from(quote! {
+        #ty
+    })
 }
