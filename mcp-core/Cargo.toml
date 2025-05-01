@@ -1,6 +1,6 @@
 [package]
 name = "mcp-core"
-version = "0.1.5"
+version = "0.1.50"
 edition = "2021"
 description = "A Rust library implementing the Modern Context Protocol (MCP)"
 repository = "https://github.com/stevohuncho/mcp-core"
@@ -33,7 +33,6 @@ sse = ["actix-web", "uuid", "reqwest", "reqwest-eventsource"]
 [dev-dependencies]
 schemars = "0.8"
 tokio = { version = "1.0", features = ["full"] }
-mcp-core-macros = { path = "../mcp-core-macros" }
 tracing-subscriber = "0.3"
 dotenv = "0.15.0"
 thiserror = "2.0.11"
@@ -47,10 +46,6 @@ clap = { version = "4.4", features = ["derive"] }
 [[example]]
 name = "echo_server"
 required-features = ["sse"]
-
-# [[example]]
-# name = "echo_server_macro"
-# required-features = ["sse"]
 
 [[example]]
 name = "echo_client"

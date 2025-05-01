@@ -30,7 +30,7 @@ use tracing::debug;
 /// # Example
 ///
 /// ```
-/// use mcp_core::transport::ClientStdioTransport;
+/// use mcp_core::transport::{ClientStdioTransport, Transport};
 /// use anyhow::Result;
 ///
 /// async fn example() -> Result<()> {

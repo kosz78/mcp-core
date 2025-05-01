@@ -27,7 +27,7 @@ use tracing::debug;
 /// # Example
 ///
 /// ```
-/// use mcp_core::{protocol::Protocol, transport::ServerStdioTransport};
+/// use mcp_core::{protocol::Protocol, transport::{ServerStdioTransport, Transport}};
 ///
 /// async fn example() {
 ///     let protocol = Protocol::builder().build();

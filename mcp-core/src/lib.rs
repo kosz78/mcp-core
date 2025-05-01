@@ -93,7 +93,7 @@ macro_rules! tool_text_response {
             content: vec![$crate::types::ToolResponseContent::Text(
                 $crate::types::TextContent {
                     content_type: "text".to_string(),
-                    text: $e,
+                    text: $e.to_string(),
                     annotations: None,
                 },
             )],
@@ -119,7 +119,7 @@ macro_rules! tool_text_content {
     ($e:expr) => {{
         $crate::types::ToolResponseContent::Text($crate::types::TextContent {
             content_type: "text".to_string(),
-            text: $e,
+            text: $e.to_string(),
             annotations: None,
         })
     }};
