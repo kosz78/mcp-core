@@ -11,7 +11,7 @@ async fn test_readonly_tool_annotations() {
         annotations(title = "web_search", read_only_hint = true, open_world_hint = true)
     )]
     async fn web_search_tool(query: String) -> Result<ToolResponseContent> {
-        Ok(tool_text_content!(query.to_string()))
+        Ok(tool_text_content!("Success"))
     }
 
     let tool = WebSearchTool::tool();
@@ -56,7 +56,7 @@ async fn test_destructive_tool_annotations() {
         )
     )]
     async fn delete_file_tool(path: String) -> Result<ToolResponseContent> {
-        Ok(tool_text_content!(path.to_string()))
+        Ok(tool_text_content!("Success"))
     }
 
     let tool = DeleteFileTool::tool();
@@ -101,7 +101,7 @@ async fn test_annotation_nested_syntax() {
         )
     )]
     async fn create_record_tool(table: String, data: String) -> Result<ToolResponseContent> {
-        Ok(tool_text_content!(table.to_string()))
+        Ok(tool_text_content!("Success"))
     }
 
     let tool = CreateRecordTool::tool();
@@ -146,7 +146,7 @@ async fn test_numeric_parameters() {
         value2: i32,
         operation: String,
     ) -> Result<ToolResponseContent> {
-        Ok(tool_text_content!("Calculation result".to_string()))
+        Ok(tool_text_content!("Success"))
     }
 
     let tool = CalculateTool::tool();
@@ -183,9 +183,7 @@ async fn test_optional_parameters() {
         optional_string: tool_param!(Option<String>, description = "An optional string parameter"),
         optional_number: tool_param!(Option<i32>, description = "An optional number parameter"),
     ) -> Result<ToolResponseContent> {
-        Ok(tool_text_content!(
-            "Tool with optional params executed".to_string()
-        ))
+        Ok(tool_text_content!("Success"))
     }
 
     let tool = OptionalParamsTool::tool();
@@ -223,7 +221,7 @@ async fn test_parameter_descriptions() {
         query: tool_param!(String, description = "SQL query to execute"),
         timeout_ms: tool_param!(Option<i32>, description = "Query timeout in milliseconds"),
     ) -> Result<ToolResponseContent> {
-        Ok(tool_text_content!("Query executed".to_string()))
+        Ok(tool_text_content!("Success"))
     }
 
     let tool = QueryDatabaseTool::tool();
@@ -252,6 +250,42 @@ async fn test_parameter_descriptions() {
             }
         },
         "required": ["db_name", "query"]
+    });
+
+    assert_eq!(tool.input_schema, expected_schema);
+}
+
+#[tokio::test]
+async fn test_parameter_hidden() {
+    #[tool(
+        name = "HideParameter",
+        description = "Demo tool to show how to hide parameters"
+    )]
+    async fn hide_parameter_tool(
+        shown: tool_param!(String, description = "Name of the shown parameter"),
+        hidden: tool_param!(String, description = "Name of the hidden parameter", hidden),
+    ) -> Result<ToolResponseContent> {
+        Ok(tool_text_content!("Success"))
+    }
+
+    let tool = HideParameterTool::tool();
+
+    assert_eq!(tool.name, "HideParameter");
+    assert_eq!(
+        tool.description,
+        Some("Demo tool to show how to hide parameters".to_string())
+    );
+
+    // Validate schema structure
+    let expected_schema = json!({
+        "type": "object",
+        "properties": {
+            "shown": {
+                "type": "string",
+                "description": "Name of the shown parameter"
+            },
+        },
+        "required": ["shown"]
     });
 
     assert_eq!(tool.input_schema, expected_schema);

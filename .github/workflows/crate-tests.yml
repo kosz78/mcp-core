@@ -10,8 +10,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    name: Run Tests
+  test-mcp-core:
+    name: Test mcp-core
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,5 +22,35 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
       
-      - name: Run tests
-        run: cargo test --verbose
+      - name: Run tests for mcp-core
+        run: cargo test -p mcp-core --verbose
+
+  test-mcp-core-macros:
+    name: Test mcp-core-macros
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+      
+      - name: Run tests for mcp-core-macros
+        run: cargo test -p mcp-core-macros --verbose
+
+  docs-test:
+    name: Documentation Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+      
+      - name: Run documentation tests
+        run: cargo test --doc --workspace --verbose
