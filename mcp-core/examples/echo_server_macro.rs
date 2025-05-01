@@ -4,10 +4,9 @@ use mcp_core::{
     server::Server,
     tool_text_content,
     transport::{ServerSseTransport, ServerStdioTransport},
-    types::{ServerCapabilities, ToolResponseContent},
+    types::{ServerCapabilities, ToolCapabilities, ToolResponseContent},
 };
-use mcp_core_macros::tool;
-use serde_json::json;
+use mcp_core_macros::{tool, tool_param};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -23,12 +22,10 @@ enum TransportType {
     Sse,
 }
 
-#[tool(
-    name = "echo",
-    description = "Echo back the message you send",
-    params(message = "The message to echo back")
-)]
-async fn echo_tool(message: String) -> Result<ToolResponseContent> {
+#[tool(name = "echo", description = "Echo back the message you send")]
+async fn echo_tool(
+    message: tool_param!(String, description = "The message to echo back"),
+) -> Result<ToolResponseContent> {
     Ok(tool_text_content!(message))
 }
 
@@ -40,15 +37,17 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let server_protocol = Server::builder("echo".to_string(), "1.0".to_string())
-        .capabilities(ServerCapabilities {
-            tools: Some(json!({
-                "listChanged": false,
-            })),
-            ..Default::default()
-        })
-        .register_tool(EchoTool::tool(), EchoTool::call())
-        .build();
+    let server_protocol = Server::builder(
+        "echo".to_string(),
+        "1.0".to_string(),
+        mcp_core::types::ProtocolVersion::V2024_11_05,
+    )
+    .set_capabilities(ServerCapabilities {
+        tools: Some(ToolCapabilities::default()),
+        ..Default::default()
+    })
+    .register_tool(EchoTool::tool(), EchoTool::call())
+    .build();
 
     match cli.transport {
         TransportType::Stdio => {

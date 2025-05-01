@@ -6,7 +6,6 @@ use mcp_core::{
     client::ClientBuilder,
     protocol::RequestOptions,
     transport::{ClientSseTransportBuilder, ClientStdioTransport},
-    types::{ClientCapabilities, Implementation},
 };
 use serde_json::json;
 use tracing::info;
@@ -15,7 +14,7 @@ use tracing::info;
 #[command(author, version, about, long_about = None)]
 struct Cli {
     /// Transport type to use
-    #[arg(value_enum, default_value_t = TransportType::Stdio)]
+    #[arg(value_enum, default_value_t = TransportType::Sse)]
     transport: TransportType,
 }
 
@@ -40,19 +39,14 @@ async fn main() -> Result<()> {
             // cargo run --example echo_server --features="sse"
             let transport = ClientStdioTransport::new("./target/debug/examples/echo_server", &[])?;
             let client: mcp_core::client::Client<ClientStdioTransport> =
-                ClientBuilder::new(transport.clone()).build();
+                ClientBuilder::new(transport.clone())
+                    .set_protocol_version(mcp_core::types::ProtocolVersion::V2024_11_05)
+                    .set_client_info("echo_client".to_string(), "0.1.0".to_string())
+                    .build();
             tokio::time::sleep(Duration::from_millis(100)).await;
             client.open().await?;
 
-            client
-                .initialize(
-                    Implementation {
-                        name: "echo".to_string(),
-                        version: "1.0".to_string(),
-                    },
-                    ClientCapabilities::default(),
-                )
-                .await?;
+            client.initialize().await?;
 
             client
                 .call_tool(
@@ -67,18 +61,12 @@ async fn main() -> Result<()> {
             let client = ClientBuilder::new(
                 ClientSseTransportBuilder::new("http://localhost:3000/sse".to_string()).build(),
             )
+            .set_protocol_version(mcp_core::types::ProtocolVersion::V2024_11_05)
+            .set_client_info("echo_client".to_string(), "0.1.0".to_string())
             .build();
             client.open().await?;
 
-            client
-                .initialize(
-                    Implementation {
-                        name: "echo".to_string(),
-                        version: "1.0".to_string(),
-                    },
-                    ClientCapabilities::default(),
-                )
-                .await?;
+            client.initialize().await?;
 
             client
                 .request(

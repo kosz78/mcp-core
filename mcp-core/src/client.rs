@@ -1,3 +1,16 @@
+//! # MCP Client
+//!
+//! This module provides the client-side implementation of the Model Context Protocol (MCP).
+//! The client can connect to MCP servers, initialize the connection, and invoke tools
+//! provided by the server.
+//!
+//! The core functionality includes:
+//! - Establishing connections to MCP servers
+//! - Managing the protocol handshake
+//! - Discovering available tools
+//! - Invoking tools with parameters
+//! - Handling server resources
+
 use std::{collections::HashMap, env, sync::Arc};
 
 use crate::{
@@ -5,8 +18,8 @@ use crate::{
     transport::Transport,
     types::{
         CallToolRequest, CallToolResponse, ClientCapabilities, Implementation, InitializeRequest,
-        InitializeResponse, ListRequest, ReadResourceRequest, Resource, ResourcesListResponse,
-        ToolsListResponse, LATEST_PROTOCOL_VERSION,
+        InitializeResponse, ListRequest, ProtocolVersion, ReadResourceRequest, Resource,
+        ResourcesListResponse, ToolsListResponse, LATEST_PROTOCOL_VERSION,
     },
 };
 
@@ -15,32 +28,71 @@ use serde_json::Value;
 use tokio::sync::RwLock;
 use tracing::debug;
 
+/// An MCP client for connecting to MCP servers and invoking their tools.
+///
+/// The `Client` provides a high-level API for interacting with MCP servers,
+/// including initialization, tool discovery, and tool invocation.
 #[derive(Clone)]
 pub struct Client<T: Transport> {
     transport: T,
     strict: bool,
+    protocol_version: ProtocolVersion,
     initialize_res: Arc<RwLock<Option<InitializeResponse>>>,
     env: Option<HashMap<String, SecureValue>>,
+    client_info: Implementation,
+    capabilities: ClientCapabilities,
 }
 
 impl<T: Transport> Client<T> {
+    /// Creates a new client builder.
+    ///
+    /// # Arguments
+    ///
+    /// * `transport` - The transport to use for communication with the server
+    ///
+    /// # Returns
+    ///
+    /// A `ClientBuilder` for configuring and building the client
     pub fn builder(transport: T) -> ClientBuilder<T> {
         ClientBuilder::new(transport)
     }
 
+    /// Sets the protocol version for the client.
+    ///
+    /// # Arguments
+    ///
+    /// * `protocol_version` - The protocol version to use
+    ///
+    /// # Returns
+    ///
+    /// The modified client instance
+    pub fn set_protocol_version(mut self, protocol_version: ProtocolVersion) -> Self {
+        self.protocol_version = protocol_version;
+        self
+    }
+
+    /// Opens the transport connection.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or failure
     pub async fn open(&self) -> Result<()> {
         self.transport.open().await
     }
 
-    pub async fn initialize(
-        &self,
-        client_info: Implementation,
-        capabilities: ClientCapabilities,
-    ) -> Result<InitializeResponse> {
+    /// Initializes the connection with the MCP server.
+    ///
+    /// This sends the initialize request to the server, negotiates protocol
+    /// version and capabilities, and establishes the session.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the server's initialization response if successful
+    pub async fn initialize(&self) -> Result<InitializeResponse> {
         let request = InitializeRequest {
-            protocol_version: LATEST_PROTOCOL_VERSION.to_string(),
-            capabilities,
-            client_info,
+            protocol_version: self.protocol_version.as_str().to_string(),
+            capabilities: self.capabilities.clone(),
+            client_info: self.client_info.clone(),
         };
         let response = self
             .request(
@@ -52,7 +104,7 @@ impl<T: Transport> Client<T> {
         let response: InitializeResponse = serde_json::from_value(response)
             .map_err(|e| anyhow::anyhow!("Failed to parse response: {}", e))?;
 
-        if response.protocol_version != LATEST_PROTOCOL_VERSION {
+        if response.protocol_version != self.protocol_version.as_str() {
             return Err(anyhow::anyhow!(
                 "Unsupported protocol version: {}",
                 response.protocol_version
@@ -74,6 +126,11 @@ impl<T: Transport> Client<T> {
         Ok(response)
     }
 
+    /// Checks if the client has been initialized.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating if the client is initialized
     pub async fn assert_initialized(&self) -> Result<(), anyhow::Error> {
         let reader = self.initialize_res.read().await;
         match &*reader {
@@ -82,6 +139,17 @@ impl<T: Transport> Client<T> {
         }
     }
 
+    /// Sends a request to the server.
+    ///
+    /// # Arguments
+    ///
+    /// * `method` - The method name
+    /// * `params` - Optional parameters for the request
+    /// * `options` - Request options (like timeout)
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the server's response if successful
     pub async fn request(
         &self,
         method: &str,
@@ -94,6 +162,16 @@ impl<T: Transport> Client<T> {
             .ok_or_else(|| anyhow::anyhow!("Request failed: {:?}", response.error))
     }
 
+    /// Lists tools available on the server.
+    ///
+    /// # Arguments
+    ///
+    /// * `cursor` - Optional pagination cursor
+    /// * `request_options` - Optional request options
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the list of tools if successful
     pub async fn list_tools(
         &self,
         cursor: Option<String>,
@@ -117,6 +195,16 @@ impl<T: Transport> Client<T> {
             .map_err(|e| anyhow::anyhow!("Failed to parse response: {}", e))?)
     }
 
+    /// Calls a tool on the server.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the tool to call
+    /// * `arguments` - Optional arguments for the tool
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the tool's response if successful
     pub async fn call_tool(
         &self,
         name: &str,
@@ -155,6 +243,16 @@ impl<T: Transport> Client<T> {
             .map_err(|e| anyhow::anyhow!("Failed to parse response: {}", e))?)
     }
 
+    /// Lists resources available on the server.
+    ///
+    /// # Arguments
+    ///
+    /// * `cursor` - Optional pagination cursor
+    /// * `request_options` - Optional request options
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the list of resources if successful
     pub async fn list_resources(
         &self,
         cursor: Option<String>,
@@ -178,6 +276,15 @@ impl<T: Transport> Client<T> {
             .map_err(|e| anyhow::anyhow!("Failed to parse response: {}", e))?)
     }
 
+    /// Reads a resource from the server.
+    ///
+    /// # Arguments
+    ///
+    /// * `uri` - The URI of the resource to read
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the resource if successful
     pub async fn read_resource(&self, uri: url::Url) -> Result<Resource> {
         if self.strict {
             self.assert_initialized().await?;
@@ -232,57 +339,160 @@ impl<T: Transport> Client<T> {
     }
 }
 
-#[derive(Clone)]
+/// Represents a value that may contain sensitive information.
+///
+/// Secure values can be either static strings or environment variables.
+#[derive(Clone, Debug)]
 pub enum SecureValue {
+    /// A static string value
     Static(String),
+    /// An environment variable reference
     Env(String),
 }
 
+/// Builder for creating configured `Client` instances.
+///
+/// The `ClientBuilder` provides a fluent API for configuring and creating
+/// MCP clients with specific settings.
 pub struct ClientBuilder<T: Transport> {
     transport: T,
     strict: bool,
     env: Option<HashMap<String, SecureValue>>,
+    protocol_version: ProtocolVersion,
+    client_info: Implementation,
+    capabilities: ClientCapabilities,
 }
 
 impl<T: Transport> ClientBuilder<T> {
+    /// Creates a new client builder.
+    ///
+    /// # Arguments
+    ///
+    /// * `transport` - The transport to use for communication with the server
+    ///
+    /// # Returns
+    ///
+    /// A new `ClientBuilder` instance
     pub fn new(transport: T) -> Self {
         Self {
             transport,
             strict: false,
             env: None,
+            protocol_version: LATEST_PROTOCOL_VERSION,
+            client_info: Implementation {
+                name: env::var("CARGO_PKG_NAME").unwrap_or_else(|_| "mcp-client".to_string()),
+                version: env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.1.0".to_string()),
+            },
+            capabilities: ClientCapabilities::default(),
         }
     }
 
-    pub fn with_secure_value(mut self, key: impl Into<String>, value: SecureValue) -> Self {
-        match &mut self.env {
-            Some(env) => {
-                env.insert(key.into(), value);
-            }
-            None => {
-                let mut new_env = HashMap::new();
-                new_env.insert(key.into(), value);
-                self.env = Some(new_env);
-            }
-        }
+    /// Sets the protocol version for the client.
+    ///
+    /// # Arguments
+    ///
+    /// * `protocol_version` - The protocol version to use
+    ///
+    /// # Returns
+    ///
+    /// The modified builder instance
+    pub fn set_protocol_version(mut self, protocol_version: ProtocolVersion) -> Self {
+        self.protocol_version = protocol_version;
         self
     }
 
+    /// Sets the client information.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The client name
+    /// * `version` - The client version
+    ///
+    /// # Returns
+    ///
+    /// The modified builder instance
+    pub fn set_client_info(mut self, name: impl Into<String>, version: impl Into<String>) -> Self {
+        self.client_info = Implementation {
+            name: name.into(),
+            version: version.into(),
+        };
+        self
+    }
+
+    /// Sets the client capabilities.
+    ///
+    /// # Arguments
+    ///
+    /// * `capabilities` - The client capabilities
+    ///
+    /// # Returns
+    ///
+    /// The modified builder instance
+    pub fn set_capabilities(mut self, capabilities: ClientCapabilities) -> Self {
+        self.capabilities = capabilities;
+        self
+    }
+
+    /// Adds a secure value for substitution in tool arguments.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The key for the secure value
+    /// * `value` - The secure value
+    ///
+    /// # Returns
+    ///
+    /// The modified builder instance
+    pub fn with_secure_value(mut self, key: impl Into<String>, value: SecureValue) -> Self {
+        if self.env.is_none() {
+            self.env = Some(HashMap::new());
+        }
+
+        if let Some(env) = &mut self.env {
+            env.insert(key.into(), value);
+        }
+
+        self
+    }
+
+    /// Enables strict mode, which requires initialization before operations.
+    ///
+    /// # Returns
+    ///
+    /// The modified builder instance
     pub fn use_strict(mut self) -> Self {
         self.strict = true;
         self
     }
 
+    /// Sets the strict mode flag.
+    ///
+    /// # Arguments
+    ///
+    /// * `strict` - Whether to enable strict mode
+    ///
+    /// # Returns
+    ///
+    /// The modified builder instance
     pub fn with_strict(mut self, strict: bool) -> Self {
         self.strict = strict;
         self
     }
 
+    /// Builds the client with the configured settings.
+    ///
+    /// # Returns
+    ///
+    /// A new `Client` instance
     pub fn build(self) -> Client<T> {
         Client {
             transport: self.transport,
             strict: self.strict,
             env: self.env,
+            protocol_version: self.protocol_version,
             initialize_res: Arc::new(RwLock::new(None)),
+            client_info: self.client_info,
+            capabilities: self.capabilities,
         }
     }
 }

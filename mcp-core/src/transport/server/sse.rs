@@ -24,6 +24,31 @@ use tokio::{
 };
 use uuid::Uuid;
 
+/// Server transport that communicates with MCP clients over Server-Sent Events (SSE).
+///
+/// The `ServerSseTransport` runs an HTTP server that accepts connections from clients
+/// using Server-Sent Events (SSE) for sending messages to clients and receiving messages
+/// via HTTP POST requests. This transport is suitable for web-based MCP implementations
+/// and applications that need to communicate across network boundaries.
+///
+/// Features:
+/// - Supports multiple concurrent client connections
+/// - Uses SSE for efficient server-to-client messaging
+/// - Manages client sessions with unique IDs
+/// - Provides heartbeat/ping functionality to maintain connections
+///
+/// # Example
+///
+/// ```
+/// use mcp_core::{protocol::Protocol, transport::ServerSseTransport};
+///
+/// async fn example() {
+///     let protocol = Protocol::builder().build();
+///     let transport = ServerSseTransport::new("127.0.0.1".to_string(), 3000, protocol);
+///     // Start the server
+///     transport.open().await.expect("Failed to start SSE server");
+/// }
+/// ```
 #[derive(Clone)]
 pub struct ServerSseTransport {
     protocol: Protocol,
@@ -33,6 +58,17 @@ pub struct ServerSseTransport {
 }
 
 impl ServerSseTransport {
+    /// Creates a new `ServerSseTransport` instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `host` - The host address to bind the HTTP server to (e.g., "127.0.0.1")
+    /// * `port` - The port to listen on
+    /// * `protocol` - The MCP protocol instance to use for handling messages
+    ///
+    /// # Returns
+    ///
+    /// A new `ServerSseTransport` instance
     pub fn new(host: String, port: u16, protocol: Protocol) -> Self {
         Self {
             protocol,
@@ -42,6 +78,13 @@ impl ServerSseTransport {
         }
     }
 
+    /// Creates a new session with the given ID.
+    ///
+    /// This sets up the communication channels needed for the session.
+    ///
+    /// # Arguments
+    ///
+    /// * `session_id` - The unique ID for the session
     async fn create_session(&self, session_id: String) {
         let (tx, rx) = mpsc::channel::<JsonRpcMessage>(100);
         let session = ServerSseTransportSession {
@@ -52,6 +95,15 @@ impl ServerSseTransport {
         self.sessions.lock().await.insert(session_id, session);
     }
 
+    /// Retrieves a session by its ID.
+    ///
+    /// # Arguments
+    ///
+    /// * `session_id` - The ID of the session to retrieve
+    ///
+    /// # Returns
+    ///
+    /// An `Option` containing the session if found, or `None` if not found
     async fn get_session(&self, session_id: &str) -> Option<ServerSseTransportSession> {
         let sessions = self.sessions.lock().await;
         sessions.get(session_id).cloned()
@@ -60,6 +112,17 @@ impl ServerSseTransport {
 
 #[async_trait()]
 impl Transport for ServerSseTransport {
+    /// Opens the transport by starting the HTTP server.
+    ///
+    /// This method:
+    /// 1. Creates an Actix Web HTTP server
+    /// 2. Sets up routes for SSE connections and message handling
+    /// 3. Binds to the configured host and port
+    /// 4. Starts the server
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or failure
     async fn open(&self) -> Result<()> {
         let transport = self.clone();
         let server = HttpServer::new(move || {
@@ -77,14 +140,35 @@ impl Transport for ServerSseTransport {
             .map_err(|e| anyhow::anyhow!("Server error: {:?}", e))
     }
 
+    /// Closes the transport.
+    ///
+    /// This is a no-op for the SSE transport as the HTTP server is managed by Actix Web.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success
     async fn close(&self) -> Result<()> {
         Ok(())
     }
 
+    /// Polls for incoming messages.
+    ///
+    /// This is a no-op for the SSE transport as messages are handled via HTTP routes.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing `None`
     async fn poll_message(&self) -> Result<Option<Message>> {
         Ok(None)
     }
 
+    /// Sends a request.
+    ///
+    /// This is a no-op for the SSE transport as it doesn't directly send requests.
+    ///
+    /// # Returns
+    ///
+    /// A `Future` that resolves to a `Result` containing a default response
     fn request(
         &self,
         _method: &str,
@@ -94,6 +178,13 @@ impl Transport for ServerSseTransport {
         Box::pin(async move { Ok(JsonRpcResponse::default()) })
     }
 
+    /// Sends a notification.
+    ///
+    /// This is a no-op for the SSE transport as it doesn't directly send notifications.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success
     async fn send_notification(
         &self,
         _method: &str,
@@ -102,6 +193,13 @@ impl Transport for ServerSseTransport {
         Ok(())
     }
 
+    /// Sends a response.
+    ///
+    /// This is a no-op for the SSE transport as responses are handled by individual sessions.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success
     async fn send_response(
         &self,
         _id: RequestId,
@@ -112,6 +210,23 @@ impl Transport for ServerSseTransport {
     }
 }
 
+/// Handles SSE connection requests.
+///
+/// This function:
+/// 1. Creates a new session for the client
+/// 2. Establishes an SSE stream
+/// 3. Sends the endpoint info event
+/// 4. Sets up a ping mechanism to keep the connection alive
+/// 5. Streams messages to the client
+///
+/// # Arguments
+///
+/// * `req` - The HTTP request
+/// * `transport` - The `ServerSseTransport` instance
+///
+/// # Returns
+///
+/// An `HttpResponse` with the SSE stream
 pub async fn sse_handler(
     req: actix_web::HttpRequest,
     transport: web::Data<ServerSseTransport>,
@@ -197,13 +312,32 @@ pub async fn sse_handler(
         .streaming(stream)
 }
 
+/// Query parameters for message handling.
 #[derive(Deserialize)]
 pub struct MessageQuery {
+    /// The session ID that identifies the client
     #[serde(rename = "sessionId")]
     session_id: Option<String>,
 }
 
-async fn message_handler(
+/// Handles incoming messages from clients.
+///
+/// This function:
+/// 1. Extracts the session ID from the query parameters
+/// 2. Retrieves the session
+/// 3. Passes the message to the protocol for processing
+/// 4. Returns a response to the client
+///
+/// # Arguments
+///
+/// * `query` - The query parameters containing the session ID
+/// * `message` - The JSON-RPC message
+/// * `transport` - The `ServerSseTransport` instance
+///
+/// # Returns
+///
+/// An `HttpResponse` with the operation result
+pub async fn message_handler(
     query: Query<MessageQuery>,
     message: web::Json<Message>,
     transport: web::Data<ServerSseTransport>,
@@ -263,6 +397,11 @@ async fn message_handler(
         HttpResponse::BadRequest().body("Session ID not specified")
     }
 }
+
+/// Represents a client session in the SSE transport.
+///
+/// Each `ServerSseTransportSession` handles communication with a specific client,
+/// processing incoming messages and sending outgoing messages.
 #[derive(Clone)]
 pub struct ServerSseTransportSession {
     protocol: Protocol,

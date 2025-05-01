@@ -1,6 +1,6 @@
 [package]
 name = "mcp-core"
-version = "0.1.46"
+version = "0.1.5"
 edition = "2021"
 description = "A Rust library implementing the Modern Context Protocol (MCP)"
 repository = "https://github.com/stevohuncho/mcp-core"
@@ -27,6 +27,7 @@ reqwest = { version = "0.12.12", features = ["json"], optional = true }
 reqwest-eventsource = { version = "0.6.0", optional = true }
 
 [features]
+default = ["sse"]
 sse = ["actix-web", "uuid", "reqwest", "reqwest-eventsource"]
 
 

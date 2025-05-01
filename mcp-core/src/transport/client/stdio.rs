@@ -15,7 +15,32 @@ use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tracing::debug;
 
-/// ClientStdioTransport launches a child process and communicates with it via stdio.
+/// Client transport that communicates with an MCP server over standard I/O.
+///
+/// The `ClientStdioTransport` launches a child process specified by the provided
+/// program and arguments, then communicates with it using the standard input and output
+/// streams. It implements the `Transport` trait to send requests and receive responses
+/// over these streams.
+///
+/// This transport is useful for:
+/// - Running local MCP servers as child processes
+/// - Command-line tools that need to communicate with MCP servers
+/// - Testing and development scenarios
+///
+/// # Example
+///
+/// ```
+/// use mcp_core::transport::ClientStdioTransport;
+/// use anyhow::Result;
+///
+/// async fn example() -> Result<()> {
+///     let transport = ClientStdioTransport::new("my-mcp-server", &["--flag"])?;
+///     transport.open().await?;
+///     // Use transport...
+///     transport.close().await?;
+///     Ok(())
+/// }
+/// ```
 #[derive(Clone)]
 pub struct ClientStdioTransport {
     protocol: Protocol,
@@ -27,6 +52,16 @@ pub struct ClientStdioTransport {
 }
 
 impl ClientStdioTransport {
+    /// Creates a new `ClientStdioTransport` instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `program` - The path or name of the program to execute
+    /// * `args` - Command-line arguments to pass to the program
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the new transport instance if successful
     pub fn new(program: &str, args: &[&str]) -> Result<Self> {
         Ok(ClientStdioTransport {
             protocol: ProtocolBuilder::new().build(),
@@ -41,6 +76,16 @@ impl ClientStdioTransport {
 
 #[async_trait()]
 impl Transport for ClientStdioTransport {
+    /// Opens the transport by launching the child process and setting up the communication channels.
+    ///
+    /// This method:
+    /// 1. Spawns the child process with the configured program and arguments
+    /// 2. Sets up pipes for stdin and stdout
+    /// 3. Starts a background task for handling incoming messages
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or failure
     async fn open(&self) -> Result<()> {
         debug!("ClientStdioTransport: Opening transport");
         let mut child = Command::new(&self.program)
@@ -104,6 +149,15 @@ impl Transport for ClientStdioTransport {
         Ok(())
     }
 
+    /// Closes the transport by terminating the child process and cleaning up resources.
+    ///
+    /// This method:
+    /// 1. Kills the child process
+    /// 2. Clears the stdin and stdout handles
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or failure
     async fn close(&self) -> Result<()> {
         let mut child_lock = self.child.lock().await;
         if let Some(child) = child_lock.as_mut() {
@@ -118,6 +172,14 @@ impl Transport for ClientStdioTransport {
         Ok(())
     }
 
+    /// Polls for incoming messages from the child process's stdout.
+    ///
+    /// This method reads a line from the child process's stdout and parses it
+    /// as a JSON-RPC message.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing an `Option<Message>`. `None` indicates EOF.
     async fn poll_message(&self) -> Result<Option<Message>> {
         debug!("ClientStdioTransport: Starting to receive message");
 
@@ -165,6 +227,23 @@ impl Transport for ClientStdioTransport {
         }
     }
 
+    /// Sends a request to the child process and waits for a response.
+    ///
+    /// This method:
+    /// 1. Creates a new request ID
+    /// 2. Constructs a JSON-RPC request
+    /// 3. Sends it to the child process's stdin
+    /// 4. Waits for a response with the same ID
+    ///
+    /// # Arguments
+    ///
+    /// * `method` - The method name for the request
+    /// * `params` - Optional parameters for the request
+    /// * `options` - Request options (like timeout)
+    ///
+    /// # Returns
+    ///
+    /// A `Future` that resolves to a `Result` containing the response
     fn request(
         &self,
         method: &str,
@@ -239,6 +318,17 @@ impl Transport for ClientStdioTransport {
         })
     }
 
+    /// Sends a response to a request previously received from the child process.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The ID of the request being responded to
+    /// * `result` - Optional successful result
+    /// * `error` - Optional error information
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or failure
     async fn send_response(
         &self,
         id: RequestId,
@@ -275,6 +365,18 @@ impl Transport for ClientStdioTransport {
         Ok(())
     }
 
+    /// Sends a notification to the child process.
+    ///
+    /// Unlike requests, notifications do not expect a response.
+    ///
+    /// # Arguments
+    ///
+    /// * `method` - The method name for the notification
+    /// * `params` - Optional parameters for the notification
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or failure
     async fn send_notification(
         &self,
         method: &str,

@@ -35,11 +35,11 @@ async fn test_readonly_tool_annotations() {
     assert_eq!(tool.input_schema, expected_schema);
 
     let annotations = tool.annotations.unwrap();
-    assert_eq!(annotations["title"], "web_search");
-    assert_eq!(annotations["readOnlyHint"], true);
-    assert_eq!(annotations["destructiveHint"], true); // Default value
-    assert_eq!(annotations["idempotentHint"], false); // Default value
-    assert_eq!(annotations["openWorldHint"], true);
+    assert_eq!(annotations.title, Some("web_search".to_string()));
+    assert_eq!(annotations.read_only_hint, Some(true));
+    assert_eq!(annotations.destructive_hint, Some(true)); // Default value
+    assert_eq!(annotations.idempotent_hint, Some(false)); // Default value
+    assert_eq!(annotations.open_world_hint, Some(true));
 }
 
 #[tokio::test]
@@ -80,11 +80,11 @@ async fn test_destructive_tool_annotations() {
     assert_eq!(tool.input_schema, expected_schema);
 
     let annotations = tool.annotations.unwrap();
-    assert_eq!(annotations["title"], "Delete File");
-    assert_eq!(annotations["readOnlyHint"], false);
-    assert_eq!(annotations["destructiveHint"], true);
-    assert_eq!(annotations["idempotentHint"], true);
-    assert_eq!(annotations["openWorldHint"], false);
+    assert_eq!(annotations.title, Some("Delete File".to_string()));
+    assert_eq!(annotations.read_only_hint, Some(false));
+    assert_eq!(annotations.destructive_hint, Some(true));
+    assert_eq!(annotations.idempotent_hint, Some(true));
+    assert_eq!(annotations.open_world_hint, Some(false));
 }
 
 #[tokio::test]
@@ -128,11 +128,14 @@ async fn test_annotation_nested_syntax() {
     assert_eq!(tool.input_schema, expected_schema);
 
     let annotations = tool.annotations.unwrap();
-    assert_eq!(annotations["title"], "Create Database Record");
-    assert_eq!(annotations["readOnlyHint"], false);
-    assert_eq!(annotations["destructiveHint"], false);
-    assert_eq!(annotations["idempotentHint"], false);
-    assert_eq!(annotations["openWorldHint"], false);
+    assert_eq!(
+        annotations.title,
+        Some("Create Database Record".to_string())
+    );
+    assert_eq!(annotations.read_only_hint, Some(false));
+    assert_eq!(annotations.destructive_hint, Some(false));
+    assert_eq!(annotations.idempotent_hint, Some(false));
+    assert_eq!(annotations.open_world_hint, Some(false));
 }
 
 #[tokio::test]

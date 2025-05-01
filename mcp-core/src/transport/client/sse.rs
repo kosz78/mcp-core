@@ -16,7 +16,36 @@ use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tracing::debug;
 
-/// ClientSseTransport communicates with a server via SSE for receiving and HTTP for sending.
+/// Client transport that communicates with an MCP server over Server-Sent Events (SSE).
+///
+/// The `ClientSseTransport` establishes a connection to an MCP server using Server-Sent
+/// Events (SSE) for receiving messages from the server, and HTTP for sending messages
+/// to the server. This transport is suitable for web-based applications and environments
+/// where network communication is required.
+///
+/// Features:
+/// - Uses SSE for efficient one-way server-to-client communication
+/// - Uses HTTP for client-to-server communication
+/// - Supports authentication with bearer tokens
+/// - Allows custom HTTP headers
+/// - Automatically manages session state
+///
+/// # Example
+///
+/// ```
+/// use mcp_core::transport::ClientSseTransport;
+///
+/// async fn example() {
+///     let transport = ClientSseTransport::builder("https://example.com/sse".to_string())
+///         .with_bearer_token("my-token".to_string())
+///         .with_header("User-Agent", "My MCP Client")
+///         .build();
+///     
+///     transport.open().await.expect("Failed to open SSE connection");
+///     // Use transport...
+///     transport.close().await.expect("Failed to close SSE connection");
+/// }
+/// ```
 #[derive(Clone)]
 pub struct ClientSseTransport {
     protocol: Protocol,
@@ -28,6 +57,14 @@ pub struct ClientSseTransport {
     event_source: Arc<Mutex<Option<EventSource>>>,
 }
 
+/// Builder for configuring and creating `ClientSseTransport` instances.
+///
+/// This builder allows customizing the SSE transport with options like:
+/// - Server URL
+/// - Authentication tokens
+/// - Custom HTTP headers
+///
+/// Use this builder to create a new `ClientSseTransport` with the desired configuration.
 pub struct ClientSseTransportBuilder {
     server_url: String,
     bearer_token: Option<String>,
@@ -36,6 +73,15 @@ pub struct ClientSseTransportBuilder {
 }
 
 impl ClientSseTransportBuilder {
+    /// Creates a new builder with the specified server URL.
+    ///
+    /// # Arguments
+    ///
+    /// * `server_url` - The URL of the SSE endpoint on the MCP server
+    ///
+    /// # Returns
+    ///
+    /// A new `ClientSseTransportBuilder` instance
     pub fn new(server_url: String) -> Self {
         Self {
             server_url,
@@ -45,16 +91,42 @@ impl ClientSseTransportBuilder {
         }
     }
 
+    /// Adds a bearer token for authentication.
+    ///
+    /// This token will be included in the `Authorization` header as `Bearer {token}`.
+    ///
+    /// # Arguments
+    ///
+    /// * `token` - The bearer token to use for authentication
+    ///
+    /// # Returns
+    ///
+    /// The modified builder instance
     pub fn with_bearer_token(mut self, token: String) -> Self {
         self.bearer_token = Some(token);
         self
     }
 
+    /// Adds a custom HTTP header to the SSE request.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The header name
+    /// * `value` - The header value
+    ///
+    /// # Returns
+    ///
+    /// The modified builder instance
     pub fn with_header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.headers.insert(key.into(), value.into());
         self
     }
 
+    /// Builds the `ClientSseTransport` with the configured options.
+    ///
+    /// # Returns
+    ///
+    /// A new `ClientSseTransport` instance
     pub fn build(self) -> ClientSseTransport {
         ClientSseTransport {
             protocol: self.protocol_builder.build(),
@@ -69,6 +141,15 @@ impl ClientSseTransportBuilder {
 }
 
 impl ClientSseTransport {
+    /// Creates a new builder for configuring the transport.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The URL of the SSE endpoint on the MCP server
+    ///
+    /// # Returns
+    ///
+    /// A new `ClientSseTransportBuilder` instance
     pub fn builder(url: String) -> ClientSseTransportBuilder {
         ClientSseTransportBuilder::new(url)
     }
@@ -76,6 +157,17 @@ impl ClientSseTransport {
 
 #[async_trait()]
 impl Transport for ClientSseTransport {
+    /// Opens the transport by establishing an SSE connection to the server.
+    ///
+    /// This method:
+    /// 1. Creates an SSE connection to the server URL
+    /// 2. Adds configured headers and authentication
+    /// 3. Starts a background task for handling incoming messages
+    /// 4. Waits for the session endpoint to be received
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or failure
     async fn open(&self) -> Result<()> {
         debug!("ClientSseTransport: Opening transport");
 
@@ -143,6 +235,15 @@ impl Transport for ClientSseTransport {
         Err(anyhow::anyhow!("Timeout waiting for initial SSE message"))
     }
 
+    /// Closes the transport by terminating the SSE connection.
+    ///
+    /// This method:
+    /// 1. Closes the EventSource connection
+    /// 2. Clears the session endpoint
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or failure
     async fn close(&self) -> Result<()> {
         debug!("ClientSseTransport: Closing transport");
         // Close the event source
@@ -154,6 +255,15 @@ impl Transport for ClientSseTransport {
         Ok(())
     }
 
+    /// Polls for incoming messages from the SSE connection.
+    ///
+    /// This method processes SSE events and:
+    /// - Handles control messages (like endpoint information)
+    /// - Parses JSON-RPC messages
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing an `Option<Message>` if a message is available
     async fn poll_message(&self) -> Result<Option<Message>> {
         let mut event_source_guard = self.event_source.lock().await;
         let event_source = event_source_guard
@@ -190,6 +300,22 @@ impl Transport for ClientSseTransport {
         }
     }
 
+    /// Sends a request to the server via HTTP and waits for a response.
+    ///
+    /// This method:
+    /// 1. Creates a JSON-RPC request
+    /// 2. Sends it to the session endpoint via HTTP POST
+    /// 3. Waits for a response with the same ID through the SSE connection
+    ///
+    /// # Arguments
+    ///
+    /// * `method` - The method name for the request
+    /// * `params` - Optional parameters for the request
+    /// * `options` - Request options (like timeout)
+    ///
+    /// # Returns
+    ///
+    /// A `Future` that resolves to a `Result` containing the response
     fn request(
         &self,
         method: &str,
@@ -300,6 +426,17 @@ impl Transport for ClientSseTransport {
         })
     }
 
+    /// Sends a response to a request previously received from the server.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The ID of the request being responded to
+    /// * `result` - Optional successful result
+    /// * `error` - Optional error information
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or failure
     async fn send_response(
         &self,
         id: RequestId,
@@ -366,6 +503,18 @@ impl Transport for ClientSseTransport {
         Ok(())
     }
 
+    /// Sends a notification to the server via HTTP.
+    ///
+    /// Unlike requests, notifications do not expect a response.
+    ///
+    /// # Arguments
+    ///
+    /// * `method` - The method name for the notification
+    /// * `params` - Optional parameters for the notification
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or failure
     async fn send_notification(
         &self,
         method: &str,

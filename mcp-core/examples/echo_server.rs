@@ -5,7 +5,7 @@ use mcp_core::{
     tool_text_response,
     tools::ToolHandlerFn,
     transport::{ServerSseTransport, ServerStdioTransport},
-    types::{CallToolRequest, CallToolResponse, ServerCapabilities, Tool, ToolResponseContent},
+    types::{CallToolRequest, ServerCapabilities, Tool, ToolCapabilities},
 };
 use serde_json::json;
 
@@ -70,15 +70,17 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let server_protocol = Server::builder("echo".to_string(), "1.0".to_string())
-        .capabilities(ServerCapabilities {
-            tools: Some(json!({
-                "listChanged": false,
-            })),
-            ..Default::default()
-        })
-        .register_tool(EchoTool::tool(), EchoTool::call())
-        .build();
+    let server_protocol = Server::builder(
+        "echo".to_string(),
+        "1.0".to_string(),
+        mcp_core::types::ProtocolVersion::V2024_11_05,
+    )
+    .set_capabilities(ServerCapabilities {
+        tools: Some(ToolCapabilities::default()),
+        ..Default::default()
+    })
+    .register_tool(EchoTool::tool(), EchoTool::call())
+    .build();
 
     match cli.transport {
         TransportType::Stdio => {
