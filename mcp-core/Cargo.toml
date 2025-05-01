@@ -27,7 +27,6 @@ reqwest = { version = "0.12.12", features = ["json"], optional = true }
 reqwest-eventsource = { version = "0.6.0", optional = true }
 
 [features]
-default = ["sse"]
 sse = ["actix-web", "uuid", "reqwest", "reqwest-eventsource"]
 
 
@@ -49,9 +48,9 @@ clap = { version = "4.4", features = ["derive"] }
 name = "echo_server"
 required-features = ["sse"]
 
-[[example]]
-name = "echo_server_macro"
-required-features = ["sse"]
+# [[example]]
+# name = "echo_server_macro"
+# required-features = ["sse"]
 
 [[example]]
 name = "echo_client"

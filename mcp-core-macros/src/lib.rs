@@ -20,11 +20,32 @@ struct ToolArgs {
     annotations: ToolAnnotations,
 }
 
+#[derive(Debug)]
+struct ToolAnnotations {
+    title: Option<String>,
+    read_only_hint: Option<bool>,
+    destructive_hint: Option<bool>,
+    idempotent_hint: Option<bool>,
+    open_world_hint: Option<bool>,
+}
+
+impl Default for ToolAnnotations {
+    fn default() -> Self {
+        Self {
+            title: None,
+            read_only_hint: None,
+            destructive_hint: None,
+            idempotent_hint: None,
+            open_world_hint: None,
+        }
+    }
+}
+
 impl Parse for ToolArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut name = None;
         let mut description = None;
-        let mut annotations = mcp_core::types::ToolAnnotations::default();
+        let mut annotations = ToolAnnotations::default();
 
         let meta_list: Punctuated<Meta, Token![,]> = Punctuated::parse_terminated(input)?;
 
@@ -349,13 +370,14 @@ pub fn tool(args: TokenStream, input: TokenStream) -> TokenStream {
                     name: #tool_name.to_string(),
                     description: Some(#tool_description.to_string()),
                     input_schema: schema,
-                    annotations: Some(mcp_core::types::ToolAnnotations {
-                        title: Some(#title.to_string()),
-                        read_only_hint: Some(#read_only_hint),
-                        destructive_hint: Some(#destructive_hint),
-                        idempotent_hint: Some(#idempotent_hint),
-                        open_world_hint: Some(#open_world_hint),
-                    }),
+                    // annotations: Some(mcp_core::types::ToolAnnotations {
+                    //     title: Some(#title.to_string()),
+                    //     read_only_hint: Some(#read_only_hint),
+                    //     destructive_hint: Some(#destructive_hint),
+                    //     idempotent_hint: Some(#idempotent_hint),
+                    //     open_world_hint: Some(#open_world_hint),
+                    // }),
+                    annotations: None,
                 }
             }
 
@@ -370,13 +392,9 @@ pub fn tool(args: TokenStream, input: TokenStream) -> TokenStream {
                         let params: #params_struct_name = match serde_json::from_value(params) {
                             Ok(p) => p,
                             Err(e) => return mcp_core::types::CallToolResponse {
-                                content: vec![mcp_core::types::ToolResponseContent::Text(
-                                    mcp_core::types::TextContent {
-                                        content_type: "text".to_string(),
-                                        text: format!("Invalid parameters: {}", e),
-                                        annotations: None,
-                                    }
-                                )],
+                                content: vec![
+                                    mcp_core::types::ToolResponseContent::Text { text: format!("Invalid parameters: {}", e) }
+                                ],
                                 is_error: Some(true),
                                 meta: None,
                             },
@@ -389,13 +407,9 @@ pub fn tool(args: TokenStream, input: TokenStream) -> TokenStream {
                                 } else if let Ok(single_content) = serde_json::from_value::<mcp_core::types::ToolResponseContent>(serde_json::to_value(&response).unwrap_or_default()) {
                                     vec![single_content]
                                 } else {
-                                    vec![mcp_core::types::ToolResponseContent::Text(
-                                        mcp_core::types::TextContent {
-                                            content_type: "text".to_string(),
-                                            text: format!("Invalid response type: {:?}", response),
-                                            annotations: None,
-                                        }
-                                    )]
+                                    vec![
+                                        mcp_core::types::ToolResponseContent::Text { text: format!("Invalid response type: {:?}", response) }
+                                    ]
                                 };
 
                                 mcp_core::types::CallToolResponse {
@@ -405,13 +419,9 @@ pub fn tool(args: TokenStream, input: TokenStream) -> TokenStream {
                                 }
                             }
                             Err(e) => mcp_core::types::CallToolResponse {
-                                content: vec![mcp_core::types::ToolResponseContent::Text(
-                                    mcp_core::types::TextContent {
-                                        content_type: "text".to_string(),
-                                        text: format!("Tool execution error: {}", e),
-                                        annotations: None,
-                                    }
-                                )],
+                                content: vec![
+                                    mcp_core::types::ToolResponseContent::Text { text: format!("Tool execution error: {}", e) }
+                                ],
                                 is_error: Some(true),
                                 meta: None,
                             },
