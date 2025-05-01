@@ -1,6 +1,6 @@
 [package]
 name = "mcp-core-macros"
-version = "0.1.23"
+version = "0.1.3"
 edition = "2021"
 description = "A Rust Macros library for mcp-core"
 repository = "https://github.com/stevohuncho/mcp-core"
@@ -8,6 +8,7 @@ license = "Apache-2.0"
 authors = ["https://github.com/stevohuncho"]
 documentation = "https://github.com/stevohuncho/mcp-core/tree/main/mcp-core-macros"
 homepage = "https://github.com/stevohuncho/mcp-core"
+readme = "README.md"
 
 [lib]
 proc-macro = true

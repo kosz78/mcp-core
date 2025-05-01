@@ -1,105 +1,140 @@
 # MCP Core Macros
 
-This crate provides macros for the MCP (Model Communication Protocol) Core library.
+[![Crates.io](https://img.shields.io/crates/v/mcp-core-macros.svg)](https://crates.io/crates/mcp-core-macros)
+[![Documentation](https://docs.rs/mcp-core-macros/badge.svg)](https://docs.rs/mcp-core-macros)
 
-## Tool Macro
+A Rust library providing procedural macros for the MCP Core system.
 
-The `#[tool]` macro simplifies creating tools for the MCP protocol by generating the necessary boilerplate code.
+## Overview
 
-### Basic Usage
+This crate provides procedural macros that simplify the process of creating tool definitions for the MCP system. The macros handle generating tool metadata, parameter schemas, and the necessary boilerplate code for tool registration.
+
+## Macros
+
+### `#[tool]` Attribute Macro
+
+The `tool` attribute macro transforms an async function into a tool that can be registered with the MCP system. It automatically generates:
+
+- A struct named after the function (e.g., `web_search_tool` → `WebSearchTool`)
+- Tool definitions with proper metadata
+- JSON schema for input parameters 
+- Methods to handle tool invocation
+
+#### Arguments
+
+- `name` - The name of the tool (optional, defaults to the function name)
+- `description` - A description of what the tool does
+- `annotations` - Additional metadata for the tool:
+  - `title` - Display title for the tool (defaults to function name)
+  - `read_only_hint` - Whether the tool only reads data (defaults to false)
+  - `destructive_hint` - Whether the tool makes destructive changes (defaults to true)
+  - `idempotent_hint` - Whether the tool is idempotent (defaults to false)
+  - `open_world_hint` - Whether the tool can access resources outside the system (defaults to true)
+
+#### Example
 
 ```rust
+use mcp_core_macros::{tool, tool_param};
+use mcp_core::types::ToolResponseContent;
+use mcp_core::tool_text_content;
 use anyhow::Result;
-use mcp_core::{tool_text_content, types::ToolResponseContent};
-use mcp_core_macros::tool;
 
 #[tool(
-    name = "hello_world",
-    description = "A simple hello world tool"
-)]
-async fn hello_world_tool(name: String) -> Result<ToolResponseContent> {
-    Ok(tool_text_content!(format!("Hello, {}!", name)))
-}
-
-// This generates a struct named HelloWorldTool with tool() and call() methods
-let tool = HelloWorldTool::tool();
-```
-
-### Parameter Descriptions
-
-You can add descriptions for parameters using the `params` attribute:
-
-```rust
-#[tool(
-    name = "search_database",
-    description = "Search a database for records",
-    params(
-        db_name = "Name of the database to search",
-        query = "Search query string",
-        limit = "Maximum number of results to return"
-    )
-)]
-async fn search_database_tool(
-    db_name: String,
-    query: String,
-    limit: Option<i32>,
-) -> Result<ToolResponseContent> {
-    // Implementation...
-}
-```
-
-### Tool Annotations
-
-Tool annotations provide additional metadata about a tool's behavior:
-
-```rust
-#[tool(
-    name = "delete_file",
-    description = "Delete a file from the filesystem",
-    title = "Delete File",                  // Human-readable title
-    read_only_hint = false,                 // Whether the tool modifies its environment
-    destructive_hint = true,                // Whether the tool performs destructive updates
-    idempotent_hint = true,                 // Whether calling repeatedly has no additional effect
-    open_world_hint = false                 // Whether the tool interacts with external entities
-)]
-async fn delete_file_tool(path: String) -> Result<ToolResponseContent> {
-    // Implementation...
-}
-```
-
-Alternatively, you can group annotations:
-
-```rust
-#[tool(
-    name = "create_record",
-    description = "Create a database record",
+    name = "web_search",
+    description = "Search the web for information",
     annotations(
-        title = "Create Database Record",
-        readOnlyHint = false,
-        destructiveHint = false,
-        idempotentHint = false,
-        openWorldHint = false
+        title = "Web Search",
+        read_only_hint = true,
+        open_world_hint = true
     )
 )]
-async fn create_record_tool(table: String, data: String) -> Result<ToolResponseContent> {
-    // Implementation...
+async fn web_search_tool(query: String) -> Result<ToolResponseContent> {
+    // Tool implementation
+    Ok(tool_text_content!("Results for: ".to_string() + &query))
 }
 ```
 
-### Generated Schema
+### `tool_param!` Macro
 
-The `#[tool]` macro automatically generates a JSON Schema for the tool parameters with the following features:
+The `tool_param!` macro allows specifying parameter attributes such as descriptions and visibility in the generated schema.
 
-- Required parameters (non-Option types) are listed in the "required" field
-- Optional parameters (Option<T> types) are properly marked as optional
-- All numeric types (i32, f64, etc.) are normalized to "number" type
-- Enums that derive schemars::JsonSchema are properly handled
-- Parameter descriptions are included in the schema
+#### Arguments
 
-### Default Values
+- `hidden` - Excludes the parameter from the generated schema
+- `description` - Adds a description to the parameter in the schema
 
-- `title`: defaults to the tool name if not specified
-- `readOnlyHint`: defaults to `false`
-- `destructiveHint`: defaults to `true`
-- `idempotentHint`: defaults to `false`
-- `openWorldHint`: defaults to `true` 
+#### Example
+
+```rust
+use mcp_core_macros::{tool, tool_param};
+use mcp_core::types::ToolResponseContent;
+use mcp_core::tool_text_content;
+use anyhow::Result;
+
+#[tool(name = "my_tool", description = "A tool with documented parameters", annotations(title = "My Tool"))]
+async fn my_tool(
+    // A required parameter with description
+    required_param: tool_param!(String, description = "A required parameter"),
+    
+    // An optional parameter
+    optional_param: tool_param!(Option<String>, description = "An optional parameter"),
+    
+    // A hidden parameter that won't appear in the schema
+    internal_param: tool_param!(String, hidden)
+) -> Result<ToolResponseContent> {
+    // Implementation
+    Ok(tool_text_content!("Tool executed".to_string()))
+}
+```
+
+## Generated Code
+
+The `tool` macro generates a structure with methods to handle tool registration and invocation. For example, the function:
+
+```rust
+#[tool(name = "example", description = "An example tool")]
+async fn example_tool(param: String) -> Result<ToolResponseContent> {
+    // Implementation
+}
+```
+
+Will generate code equivalent to:
+
+```rust
+struct ExampleTool;
+
+impl ExampleTool {
+    pub fn tool() -> Tool {
+        Tool {
+            name: "example".to_string(),
+            description: Some("An example tool".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "param": {
+                        "type": "string"
+                    }
+                },
+                "required": ["param"]
+            }),
+            annotations: Some(json!({
+                "title": "example",
+                "readOnlyHint": false,
+                "destructiveHint": true,
+                "idempotentHint": false,
+                "openWorldHint": true
+            })),
+        }
+    }
+    
+    pub async fn call(params: serde_json::Value) -> Result<ToolResponseContent> {
+        // Deserialize parameters and call the implementation
+        let param: String = serde_json::from_value(params["param"].clone())?;
+        example_tool(param).await
+    }
+}
+```
+
+## License
+
+This project is licensed under the Apache-2.0 License. 

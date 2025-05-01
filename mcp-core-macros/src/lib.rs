@@ -1,3 +1,9 @@
+//! A library of procedural macros for defining MCP core tools.
+//!
+//! This crate provides macros for defining tools that can be used with the MCP system.
+//! The main macro is `tool`, which is used to define a tool function that can be called
+//! by the system.
+
 use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
@@ -143,6 +149,46 @@ impl Parse for ToolArgs {
     }
 }
 
+/// Defines a tool function that can be called by the MCP system.
+///
+/// This macro transforms an async function into a tool that can be registered with the MCP system.
+/// It generates a corresponding structure with methods to get the tool definition and to handle
+/// calls to the tool.
+///
+/// # Arguments
+///
+/// * `name` - The name of the tool (optional, defaults to the function name)
+/// * `description` - A description of what the tool does
+/// * `annotations` - Additional metadata for the tool:
+///   * `title` - Display title for the tool (defaults to function name)
+///   * `read_only_hint` - Whether the tool only reads data (defaults to false)
+///   * `destructive_hint` - Whether the tool makes destructive changes (defaults to true)
+///   * `idempotent_hint` - Whether the tool is idempotent (defaults to false)
+///   * `open_world_hint` - Whether the tool can access resources outside the system (defaults to true)
+///
+/// # Example
+///
+/// ```rust
+/// use mcp_core_macros::{tool, tool_param};
+/// use mcp_core::types::ToolResponseContent;
+/// use mcp_core::tool_text_content;
+/// use anyhow::Result;
+///
+/// #[tool(name = "my_tool", description = "A tool with documented parameters", annotations(title = "My Tool"))]
+/// async fn my_tool(
+///     // A required parameter with description
+///     required_param: tool_param!(String, description = "A required parameter"),
+///     
+///     // An optional parameter
+///     optional_param: tool_param!(Option<String>, description = "An optional parameter"),
+///     
+///     // A hidden parameter that won't appear in the schema
+///     internal_param: tool_param!(String, hidden)
+/// ) -> Result<ToolResponseContent> {
+///     // Implementation
+///     Ok(tool_text_content!("Tool executed".to_string()))
+/// }
+/// ```
 #[proc_macro_attribute]
 pub fn tool(args: TokenStream, input: TokenStream) -> TokenStream {
     let args = match syn::parse::<ToolArgs>(args) {
@@ -426,6 +472,35 @@ impl Parse for ToolParamArgs {
     }
 }
 
+/// Defines a parameter for a tool function with additional metadata.
+///
+/// This macro allows specifying parameter attributes such as:
+/// * `hidden` - Excludes the parameter from the generated schema
+/// * `description` - Adds a description to the parameter in the schema
+///
+/// # Example
+///
+/// ```rust
+/// use mcp_core_macros::{tool, tool_param};
+/// use mcp_core::types::ToolResponseContent;
+/// use mcp_core::tool_text_content;
+/// use anyhow::Result;
+///
+/// #[tool(name = "my_tool", description = "A tool with documented parameters")]
+/// async fn my_tool(
+///     // A required parameter with description
+///     required_param: tool_param!(String, description = "A required parameter"),
+///     
+///     // An optional parameter
+///     optional_param: tool_param!(Option<String>, description = "An optional parameter"),
+///     
+///     // A hidden parameter that won't appear in the schema
+///     internal_param: tool_param!(String, hidden)
+/// ) -> Result<ToolResponseContent> {
+///     // Implementation
+///     Ok(tool_text_content!("Tool executed".to_string()))
+/// }
+/// ```
 #[proc_macro]
 pub fn tool_param(input: TokenStream) -> TokenStream {
     let args = syn::parse_macro_input!(input as ToolParamArgs);
